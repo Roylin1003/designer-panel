@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>designer-panel demo</title>
+<style>
+  html,body{margin:0;height:100%;background:#0b0d17;color:#e8e4d8;font-family:system-ui,sans-serif;overflow:hidden;}
+  canvas{display:block;width:100vw;height:100vh;touch-action:none;}
+  #hud{position:fixed;top:12px;left:16px;font-size:18px;pointer-events:none;}
+  #hint{position:fixed;bottom:16px;left:0;right:0;text-align:center;font-size:16px;opacity:.7;pointer-events:none;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">接到 <b id="score">0</b>　漏掉 <b id="miss">0</b></div>
+<div id="hint">移動滑鼠／手指或 ← → 接住星星　·　按 F2（或左下 ⚙）調參數</div>
+<script>
+/* 所有可調的數字都放在 CONFIG，而且遊戲每一幀都直接讀 CONFIG.xxx——不複製進 const，面板才連得動。 */
+const CONFIG = {
+  paddle: { width: 140, height: 14, speed: 9 },
+  star:   { radius: 12, fallSpeed: 3.2, spawnEvery: 900, gravity: 0.04 },
+  world:  { trails: true, stars: 60 },
+};
+const DP_LABELS = {
+  paddle: '擋板', star: '星星', world: '世界',
+  width: '寬', height: '高', speed: '鍵盤速度',
+  radius: '半徑', fallSpeed: '初始落速', spawnEvery: '出現間隔 ms', gravity: '加速度',
+  trails: '拖尾', stars: '背景星數',
+};
+
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let W, H, px, keys = {}, drops = [], last = 0, acc = 0, score = 0, miss = 0;
+function fit() { W = cv.width = innerWidth; H = cv.height = innerHeight; if (px === undefined) px = W / 2; }
+addEventListener('resize', fit); fit();
+cv.addEventListener('pointermove', e => px = e.clientX);   // 掛在畫布上：在面板上拖滑桿不會帶動擋板
+addEventListener('keydown', e => keys[e.key] = true);
+addEventListener('keyup', e => keys[e.key] = false);
+
+const bg = Array.from({ length: 300 }, () => [Math.random(), Math.random(), Math.random() * 1.5 + .3]);
+
+function frame(t) {
+  const dt = Math.min(50, t - last); last = t;
+  const P = CONFIG.paddle, S = CONFIG.star;
+  if (keys.ArrowLeft) px -= P.speed; if (keys.ArrowRight) px += P.speed;
+  px = Math.max(P.width / 2, Math.min(W - P.width / 2, px));
+  acc += dt;
+  if (acc >= S.spawnEvery) { acc = 0; drops.push({ x: S.radius + Math.random() * (W - 2 * S.radius), y: -S.radius, v: S.fallSpeed }); }
+
+  ctx.fillStyle = CONFIG.world.trails ? 'rgba(11,13,23,.35)' : '#0b0d17';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#8890b0';
+  for (let i = 0; i < Math.min(bg.length, CONFIG.world.stars); i++) ctx.fillRect(bg[i][0] * W, bg[i][1] * H, bg[i][2], bg[i][2]);
+
+  const py = H - 60;
+  for (const d of drops) {
+    d.v += S.gravity; d.y += d.v;
+    if (d.y + S.radius >= py && d.y - S.radius <= py + P.height && Math.abs(d.x - px) <= P.width / 2 + S.radius) { d.dead = true; score++; }
+    else if (d.y - S.radius > H) { d.dead = true; miss++; }
+    ctx.fillStyle = '#ffd34d';
+    ctx.beginPath(); ctx.arc(d.x, d.y, S.radius, 0, Math.PI * 2); ctx.fill();
+  }
+  drops = drops.filter(d => !d.dead);
+  ctx.fillStyle = '#e8c36a';
+  ctx.fillRect(px - P.width / 2, py, P.width, P.height);
+  document.getElementById('score').textContent = score;
+  document.getElementById('miss').textContent = miss;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* 先判斷再載入：線上不帶 ?design=1 的玩家連 designer-panel.js 都不下載。
+   規則要跟 designer-panel.js 裡的 gate 一致（本機開、線上關、?design=1/0 強制）。 */
+const q = new URLSearchParams(location.search).get('design');
+const local = location.protocol === 'file:' || /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+if (q === '1' || (q !== '0' && local)) {
+  const s = document.createElement('script');
+  s.src = 'designer-panel.js';
+  s.onload = () => initDesignerPanel(CONFIG, { labels: DP_LABELS, ranges: { gravity: [0, .3, .005] } });
+  document.head.appendChild(s);
+}
+</script>
+</body>
+</html>
